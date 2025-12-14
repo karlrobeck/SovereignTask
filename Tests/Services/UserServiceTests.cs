@@ -379,4 +379,157 @@ public class UserServiceTests : IAsyncLifetime
         Assert.Equal(2, result.Count);
         Assert.All(result, t => Assert.Equal(user.Id, t.AssigneeId));
     }
+
+    [Fact]
+    public async Task RegisterAsync_WithPassword_CreatesUserWithHashedPassword()
+    {
+        // Arrange
+        var tenant = TestDataBuilder.CreateTenant();
+        _fixture.DbContext.Tenants.Add(tenant);
+        await _fixture.DbContext.SaveChangesAsync();
+
+        var email = "newuser@example.com";
+        var displayName = "New User";
+        var role = "member";
+        var password = "SecurePassword123!";
+
+        // Act
+        var result = await _service.RegisterAsync(
+            tenantId: tenant.Id,
+            email: email,
+            displayName: displayName,
+            role: role,
+            password: password
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(email, result.Email);
+        Assert.Equal(displayName, result.DisplayName);
+        Assert.Equal(role, result.Role);
+        Assert.NotNull(result.PasswordHash);
+        Assert.NotEqual(password, result.PasswordHash); // Password should be hashed, not plain text
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WithPasswordAndEntraOid_CreatesUserWithBoth()
+    {
+        // Arrange
+        var tenant = TestDataBuilder.CreateTenant();
+        _fixture.DbContext.Tenants.Add(tenant);
+        await _fixture.DbContext.SaveChangesAsync();
+
+        var email = "ssouser@example.com";
+        var displayName = "SSO User";
+        var role = "admin";
+        var password = "Password123!";
+        var entraOid = "entra-oid-12345";
+
+        // Act
+        var result = await _service.RegisterAsync(
+            tenantId: tenant.Id,
+            email: email,
+            displayName: displayName,
+            role: role,
+            password: password,
+            entraOid: entraOid
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(entraOid, result.EntraOid);
+        Assert.NotNull(result.PasswordHash);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithValidCredentials_ReturnsUser()
+    {
+        // Arrange
+        var tenant = TestDataBuilder.CreateTenant();
+        _fixture.DbContext.Tenants.Add(tenant);
+        await _fixture.DbContext.SaveChangesAsync();
+
+        var email = "loginuser@example.com";
+        var password = "CorrectPassword123!";
+        var displayName = "Login User";
+
+        // Register the user first
+        await _service.RegisterAsync(
+            tenantId: tenant.Id,
+            email: email,
+            displayName: displayName,
+            role: "member",
+            password: password
+        );
+
+        // Act
+        var result = await _service.LoginAsync(tenant.Id, email, password);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(email, result.Email);
+        Assert.Equal(displayName, result.DisplayName);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithIncorrectPassword_ReturnsNull()
+    {
+        // Arrange
+        var tenant = TestDataBuilder.CreateTenant();
+        _fixture.DbContext.Tenants.Add(tenant);
+        await _fixture.DbContext.SaveChangesAsync();
+
+        var email = "loginuser@example.com";
+        var correctPassword = "CorrectPassword123!";
+        var incorrectPassword = "WrongPassword123!";
+
+        // Register the user with correct password
+        await _service.RegisterAsync(
+            tenantId: tenant.Id,
+            email: email,
+            displayName: "Login User",
+            role: "member",
+            password: correctPassword
+        );
+
+        // Act
+        var result = await _service.LoginAsync(tenant.Id, email, incorrectPassword);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithNonExistentUser_ReturnsNull()
+    {
+        // Arrange
+        var tenant = TestDataBuilder.CreateTenant();
+        _fixture.DbContext.Tenants.Add(tenant);
+        await _fixture.DbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.LoginAsync(tenant.Id, "nonexistent@example.com", "AnyPassword123!");
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithUserWithoutPassword_ReturnsNull()
+    {
+        // Arrange
+        var tenant = TestDataBuilder.CreateTenant();
+        var user = TestDataBuilder.CreateUser(tenant.Id, email: "ssoonly@example.com");
+        // User created without password (SSO-only user)
+
+        _fixture.DbContext.Tenants.Add(tenant);
+        _fixture.DbContext.Users.Add(user);
+        await _fixture.DbContext.SaveChangesAsync();
+
+        // Act
+        var result = await _service.LoginAsync(tenant.Id, "ssoonly@example.com", "SomePassword123!");
+
+        // Assert
+        Assert.Null(result);
+    }
 }

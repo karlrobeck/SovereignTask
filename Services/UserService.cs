@@ -17,7 +17,8 @@ public class UserService
         string email,
         string displayName,
         string role,
-        string? entraOid = null
+        string? entraOid = null,
+        string? password = null
     )
     {
         var user = new UserModel
@@ -28,6 +29,7 @@ public class UserService
             DisplayName = displayName,
             Role = role,
             EntraOid = entraOid,
+            PasswordHash = password != null ? BCrypt.Net.BCrypt.HashPassword(password) : null,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
         };
@@ -149,4 +151,27 @@ public class UserService
             .Where(t => t.AssigneeId == userId)
             .ToListAsync();
     }
+
+    public async Task<UserModel?> LoginAsync(Guid tenantId, string email, string password)
+    {
+        var user = await GetUserByEmailAsync(tenantId, email);
+        if (user == null || user.PasswordHash == null)
+            return null;
+
+        bool isPasswordValid = BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
+        return isPasswordValid ? user : null;
+    }
+
+    public async Task<UserModel> RegisterAsync(
+        Guid tenantId,
+        string email,
+        string displayName,
+        string role,
+        string password,
+        string? entraOid = null
+    )
+    {
+        return await CreateUserAsync(tenantId, email, displayName, role, entraOid, password);
+    }
+
 }
